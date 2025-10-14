@@ -10,8 +10,9 @@ import asyncio
 import functools
 from typing import Any, Callable, TypeVar
 
-from opentelemetry import context, propagation
+from opentelemetry import context
 from opentelemetry.context import Context
+from opentelemetry.propagate import get_global_textmap
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -43,7 +44,8 @@ def extract_otel_context_from_meta(meta: dict | None) -> Context:
 
     # Extract context using OpenTelemetry's propagator
     if carrier:
-        return propagation.extract(carrier)
+        propagator = get_global_textmap()
+        return propagator.extract(carrier)
     return context.get_current()
 
 
@@ -58,7 +60,8 @@ def inject_otel_context_to_meta() -> dict:
         Dictionary with trace context fields for _meta field
     """
     carrier = {}
-    propagation.inject(carrier, context=context.get_current())
+    propagator = get_global_textmap()
+    propagator.inject(carrier, context=context.get_current())
     return carrier
 
 
