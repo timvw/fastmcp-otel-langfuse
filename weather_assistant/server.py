@@ -24,17 +24,18 @@ mcp = FastMCP()
 
 
 @mcp.tool()
-@otel_utils.with_otel_context_from_headers
+@otel_utils.with_otel_context_from_meta
 @observe
 async def get_weather(
     location: Annotated[str, "City name to get weather for"],
+    _meta: dict | None = None,
 ) -> Annotated[dict, "Current weather information"]:
     """
     Get current weather for a specified location.
 
     The decorator stack ensures:
     1. @mcp.tool() registers this as an MCP tool
-    2. @with_otel_context_from_headers extracts trace context from HTTP headers
+    2. @with_otel_context_from_meta extracts trace context from MCP _meta field
     3. @observe creates a Langfuse span within the OTel context
     """
     # Simulate weather API call
@@ -50,11 +51,12 @@ async def get_weather(
 
 
 @mcp.tool()
-@otel_utils.with_otel_context_from_headers
+@otel_utils.with_otel_context_from_meta
 @observe
 async def get_forecast(
     location: Annotated[str, "City name for forecast"],
     days: Annotated[int, "Number of days to forecast (1-7)"] = 3,
+    _meta: dict | None = None,
 ) -> Annotated[list, "Weather forecast for the specified days"]:
     """Get weather forecast for the specified location and number of days."""
     forecast = []

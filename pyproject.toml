@@ -5,7 +5,7 @@ description = "Example of distributed tracing with FastMCP, OpenTelemetry, and L
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastmcp>=2.0.0rc1",
+    "fastmcp>=2.12.0",
     "langfuse>=3.0.0",
     "opentelemetry-api>=1.27.0",
     "opentelemetry-sdk>=1.27.0",

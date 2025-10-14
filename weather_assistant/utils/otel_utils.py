@@ -1,61 +1,120 @@
-"""OpenTelemetry utilities for context propagation."""
+"""
+OpenTelemetry context utilities for MCP _meta field propagation.
+
+This module provides utilities for extracting and injecting OpenTelemetry
+context using MCP's _meta field convention, which works across all transport
+types (stdio, HTTP, SSE).
+"""
 
 import asyncio
 import functools
-from contextlib import contextmanager
-from typing import Optional
+from typing import Any, Callable, TypeVar
 
-from opentelemetry import trace
-from opentelemetry.context import attach, detach
-from opentelemetry.propagate import extract
+from opentelemetry import context
+from opentelemetry.context import Context
+from opentelemetry.propagate import get_global_textmap
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
-@contextmanager
-def with_otel_context(carrier: Optional[dict[str, str]] = None):
+def extract_otel_context_from_meta(meta: dict | None) -> Context:
     """
-    Context manager that extracts and activates OpenTelemetry context from carrier.
+    Extract OpenTelemetry context from MCP _meta field.
+
+    The _meta field may contain traceparent, tracestate, and baggage
+    following W3C Trace Context specification.
+
+    Args:
+        meta: Dictionary containing trace context fields from MCP request
+
+    Returns:
+        OpenTelemetry context object with extracted trace context
     """
+    if not meta:
+        return context.get_current()
+
+    # Create a carrier dict with the trace context fields
+    carrier = {}
+    if "traceparent" in meta:
+        carrier["traceparent"] = meta["traceparent"]
+    if "tracestate" in meta:
+        carrier["tracestate"] = meta["tracestate"]
+    if "baggage" in meta:
+        carrier["baggage"] = meta["baggage"]
+
+    # Extract context using OpenTelemetry's propagator
     if carrier:
-        # Extract context from carrier
-        ctx = extract(carrier)
-        # Attach the context
-        token = attach(ctx)
-        try:
-            # Get current span from the attached context
-            yield trace.get_current_span()
-        finally:
-            # Detach the context when done
-            detach(token)
-    else:
-        # No carrier provided, just yield current span
-        yield trace.get_current_span()
+        propagator = get_global_textmap()
+        return propagator.extract(carrier)
+    return context.get_current()
 
 
-def with_otel_context_from_headers(func):
+def inject_otel_context_to_meta() -> dict:
     """
-    Decorator that extracts HTTP headers and establishes OpenTelemetry context.
+    Inject current OpenTelemetry context into _meta field format.
 
-    This decorator should be applied before @observe to ensure the context
-    is available when Langfuse creates its spans.
+    This creates a dictionary suitable for use in MCP request params._meta
+    field, containing traceparent, tracestate, and baggage if present.
+
+    Returns:
+        Dictionary with trace context fields for _meta field
     """
+    carrier = {}
+    propagator = get_global_textmap()
+    propagator.inject(carrier, context=context.get_current())
+    return carrier
 
-    @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs):
-        # Import here to avoid circular dependency
-        from fastmcp.server.dependencies import get_http_headers
 
-        headers = get_http_headers()
-        with with_otel_context(headers):
-            return await func(*args, **kwargs)
+def with_otel_context_from_meta(func: F) -> F:
+    """
+    Decorator that extracts OpenTelemetry context from MCP request _meta field
+    and sets it as the current context before executing the function.
+
+    This decorator expects the decorated function to accept a _meta parameter
+    (typically as a keyword argument with default None).
+
+    Usage:
+        @mcp.tool()
+        @with_otel_context_from_meta
+        @observe()
+        def my_tool(arg1: str, _meta: dict = None) -> str:
+            # This function now runs within the propagated trace context
+            return "result"
+
+    Args:
+        func: The function to decorate
+
+    Returns:
+        Decorated function that activates the context from _meta
+    """
 
     @functools.wraps(func)
     def sync_wrapper(*args, **kwargs):
-        # Import here to avoid circular dependency
-        from fastmcp.server.dependencies import get_http_headers
+        # Extract _meta from kwargs
+        meta = kwargs.get("_meta")
 
-        headers = get_http_headers()
-        with with_otel_context(headers):
+        # Extract and activate the context
+        ctx = extract_otel_context_from_meta(meta)
+        token = context.attach(ctx)
+
+        try:
             return func(*args, **kwargs)
+        finally:
+            context.detach(token)
+
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        # Extract _meta from kwargs
+        meta = kwargs.get("_meta")
+
+        # Extract and activate the context
+        ctx = extract_otel_context_from_meta(meta)
+        token = context.attach(ctx)
+
+        try:
+            return await func(*args, **kwargs)
+        finally:
+            context.detach(token)
 
     # Return appropriate wrapper based on function type
     if asyncio.iscoroutinefunction(func):

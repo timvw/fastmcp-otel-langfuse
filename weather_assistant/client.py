@@ -6,9 +6,9 @@ from fastmcp import Client
 from fastmcp.client import StreamableHttpTransport
 from langfuse import observe
 from opentelemetry import trace
-from opentelemetry.propagate import inject
 
 from weather_assistant.config.tracing import setup_tracing
+from weather_assistant.utils.otel_utils import inject_otel_context_to_meta
 
 # Load environment variables
 load_dotenv()
@@ -22,21 +22,20 @@ tracer = trace.get_tracer(__name__)
 async def handle_weather_request(location: str, forecast_days: int = 3):
     """Handle weather request with distributed tracing."""
 
-    # Prepare carrier for context propagation
-    carrier: dict[str, str] = {}
-    inject(carrier)
+    # Inject trace context into _meta field
+    meta = inject_otel_context_to_meta()
 
-    # Create transport with trace context headers
-    transport = StreamableHttpTransport(url="http://localhost:8000/weather", headers=carrier)
+    # Create transport (no headers needed for trace propagation)
+    transport = StreamableHttpTransport(url="http://localhost:8000/weather")
 
     async with Client(transport) as client:
-        # Get current weather
-        weather_result = await client.call_tool("get_weather", {"location": location})
+        # Get current weather with _meta for trace propagation
+        weather_result = await client.call_tool("get_weather", {"location": location, "_meta": meta})
 
         # Get forecast if requested
         forecast_result = None
         if forecast_days > 0:
-            forecast_result = await client.call_tool("get_forecast", {"location": location, "days": forecast_days})
+            forecast_result = await client.call_tool("get_forecast", {"location": location, "days": forecast_days, "_meta": meta})
 
         return weather_result, forecast_result
 
@@ -61,14 +60,16 @@ if st.button("Get Weather"):
                 # Run the async function
                 weather, forecast = asyncio.run(handle_weather_request(location, forecast_days))
 
-                # Handle FastMCP response format
-                if isinstance(weather, list) and weather:
-                    # FastMCP returns tool responses as a list of content objects
-                    weather_data = weather[0]
-                    if hasattr(weather_data, "text"):
-                        import json
+                # Handle FastMCP response format - CallToolResult has content attribute
+                import json
 
-                        weather_data = json.loads(weather_data.text)
+                if hasattr(weather, "content"):
+                    # Extract content from CallToolResult
+                    content = weather.content[0] if weather.content else None
+                    if content and hasattr(content, "text"):
+                        weather_data = json.loads(content.text)
+                    else:
+                        weather_data = weather
                 else:
                     weather_data = weather
 
@@ -85,12 +86,13 @@ if st.button("Get Weather"):
                 # Display forecast if requested
                 if forecast and forecast_days > 0:
                     # Handle FastMCP response format for forecast
-                    if isinstance(forecast, list) and forecast:
-                        forecast_data = forecast[0]
-                        if hasattr(forecast_data, "text"):
-                            import json
-
-                            forecast_data = json.loads(forecast_data.text)
+                    if hasattr(forecast, "content"):
+                        # Extract content from CallToolResult
+                        content = forecast.content[0] if forecast.content else None
+                        if content and hasattr(content, "text"):
+                            forecast_data = json.loads(content.text)
+                        else:
+                            forecast_data = forecast
                     else:
                         forecast_data = forecast
 
