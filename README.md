@@ -8,16 +8,18 @@ A complete example demonstrating distributed tracing in FastMCP applications usi
 
 This repository shows how to:
 - Build MCP servers with proper distributed tracing
-- Propagate OpenTelemetry context via HTTP headers
+- Propagate OpenTelemetry context via MCP `_meta` field (transport-agnostic)
 - Integrate Langfuse for LLM-specific observability
 - Maintain trace hierarchy across client-server boundaries
 
 ## Features
 
 - 🔍 **Distributed Tracing**: Seamless trace context propagation between MCP client and server
+- 🚀 **Transport Agnostic**: Works with stdio, HTTP, and SSE transports via `_meta` field
 - 📊 **LLM Observability**: Track token usage, costs, and latencies with Langfuse
 - 🎯 **Clean Architecture**: Decorator-based approach for minimal code intrusion
 - 🐳 **Docker Ready**: Includes docker-compose setup for local development
+- 🔗 **Standards Based**: Uses W3C Trace Context format and MCP protocol conventions
 
 ## Quick Start
 
@@ -85,34 +87,68 @@ uv run streamlit run weather_assistant/client.py
 
 ## Key Concepts
 
+### Why `_meta` Field Instead of HTTP Headers?
+
+This implementation uses the MCP protocol's `_meta` field for trace context propagation. This approach:
+
+- **Transport Agnostic**: Works with stdio, HTTP, and SSE transports
+- **Standard Convention**: Follows the emerging MCP standard for metadata propagation ([PR #414](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/414))
+- **W3C Compatible**: Uses W3C Trace Context (traceparent, tracestate, baggage)
+- **Interoperable**: Compatible with `openinference-instrumentation-mcp` and other MCP tracing tools
+
 ### Decorator Stack
 
 The key to proper context propagation is the decorator order on MCP tools:
 
 ```python
 @mcp.tool()
-@otel_utils.with_otel_context_from_headers
+@otel_utils.with_otel_context_from_meta
 @observe
-async def get_weather(location: str) -> dict:
+async def get_weather(location: str, _meta: dict | None = None) -> dict:
     # Your tool implementation
 ```
 
 1. `@mcp.tool()` - Registers as MCP tool
-2. `@with_otel_context_from_headers` - Extracts OTel context from HTTP headers
+2. `@with_otel_context_from_meta` - Extracts OTel context from MCP `_meta` field
 3. `@observe` - Creates Langfuse span within the context
 
-### Context Propagation
+### Context Propagation Flow
 
-The client injects trace context into HTTP headers:
+**Client Side:**
 ```python
-carrier = {}
-inject(carrier)  # OpenTelemetry context injection
+from weather_assistant.utils.otel_utils import inject_otel_context_to_meta
 
-transport = StreamableHttpTransport(
-    url="http://localhost:8000/weather",
-    headers=carrier
-)
+# Inject trace context into _meta field
+meta = inject_otel_context_to_meta()
+
+# Pass _meta to tool call
+await client.call_tool("get_weather", {
+    "location": "New York",
+    "_meta": meta
+})
 ```
+
+**JSON-RPC Message Structure:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "get_weather",
+    "arguments": {
+      "location": "New York"
+    },
+    "_meta": {
+      "traceparent": "00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01",
+      "tracestate": "...",
+      "baggage": "..."
+    }
+  }
+}
+```
+
+**Server Side:**
+The `@with_otel_context_from_meta` decorator extracts context from `_meta` and activates it, then Langfuse's `@observe` creates spans within the propagated context.
 
 ## Monitoring
 
@@ -133,6 +169,23 @@ This will install and configure pre-commit hooks that run:
 - Ruff for linting and formatting
 - Basic file checks (trailing whitespace, YAML syntax, etc.)
 - MyPy for type checking
+
+## Comparison: HTTP Headers vs `_meta` Field
+
+| Aspect | HTTP Headers | `_meta` Field |
+|--------|-------------|---------------|
+| Transport Support | HTTP only | All transports (stdio, HTTP, SSE) |
+| Standard | W3C Trace Context | MCP + W3C Trace Context |
+| Implementation | Transport-specific | Protocol-level |
+| Compatibility | HTTP libraries | Any MCP client/server |
+| Use Case | HTTP-only deployments | Universal MCP applications |
+
+## References
+
+- [MCP Specification - `_meta` field convention](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/414)
+- [OpenTelemetry Context Propagation](https://opentelemetry.io/docs/concepts/context-propagation/)
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/)
+- [OpenInference MCP Instrumentation](https://github.com/Arize-ai/openinference/tree/main/python/instrumentation/openinference-instrumentation-mcp)
 
 ## Contributing
 

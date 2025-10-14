@@ -6,9 +6,9 @@ from fastmcp import Client
 from fastmcp.client import StreamableHttpTransport
 from langfuse import observe
 from opentelemetry import trace
-from opentelemetry.propagate import inject
 
 from weather_assistant.config.tracing import setup_tracing
+from weather_assistant.utils.otel_utils import inject_otel_context_to_meta
 
 # Load environment variables
 load_dotenv()
@@ -22,21 +22,20 @@ tracer = trace.get_tracer(__name__)
 async def handle_weather_request(location: str, forecast_days: int = 3):
     """Handle weather request with distributed tracing."""
 
-    # Prepare carrier for context propagation
-    carrier: dict[str, str] = {}
-    inject(carrier)
+    # Inject trace context into _meta field
+    meta = inject_otel_context_to_meta()
 
-    # Create transport with trace context headers
-    transport = StreamableHttpTransport(url="http://localhost:8000/weather", headers=carrier)
+    # Create transport (no headers needed for trace propagation)
+    transport = StreamableHttpTransport(url="http://localhost:8000/weather")
 
     async with Client(transport) as client:
-        # Get current weather
-        weather_result = await client.call_tool("get_weather", {"location": location})
+        # Get current weather with _meta for trace propagation
+        weather_result = await client.call_tool("get_weather", {"location": location, "_meta": meta})
 
         # Get forecast if requested
         forecast_result = None
         if forecast_days > 0:
-            forecast_result = await client.call_tool("get_forecast", {"location": location, "days": forecast_days})
+            forecast_result = await client.call_tool("get_forecast", {"location": location, "days": forecast_days, "_meta": meta})
 
         return weather_result, forecast_result
 
