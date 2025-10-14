@@ -41,7 +41,7 @@ async def handle_weather_request(location: str, forecast_days: int = 3):
 
 
 # Streamlit UI
-st.title("🌤️ Weather Assistant")
+st.title("Weather Assistant")
 
 # User input
 location = st.text_input("Enter city name:", "San Francisco")

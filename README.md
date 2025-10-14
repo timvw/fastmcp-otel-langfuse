@@ -2,7 +2,9 @@
 
 A complete example demonstrating distributed tracing in FastMCP applications using OpenTelemetry context propagation and Langfuse for LLM observability.
 
-📝 **Blog Post**: [Distributed Tracing with FastMCP: Combining OpenTelemetry and Langfuse](https://timvw.be/2025/06/27/distributed-tracing-fastmcp-langfuse-opentelemetry/)
+**Blog Posts**:
+- [Distributed Tracing with FastMCP: Combining OpenTelemetry and Langfuse](https://timvw.be/2025/06/27/distributed-tracing-fastmcp-langfuse-opentelemetry/)
+- [FastMCP Distributed Tracing: Transport-Agnostic Context Propagation with _meta](https://timvw.be/2025/10/14/fastmcp-distributed-tracing-transport-agnostic-context-propagation-with-_meta/)
 
 ## Overview
 
@@ -14,12 +16,12 @@ This repository shows how to:
 
 ## Features
 
-- 🔍 **Distributed Tracing**: Seamless trace context propagation between MCP client and server
-- 🚀 **Transport Agnostic**: Works with stdio, HTTP, and SSE transports via `_meta` field
-- 📊 **LLM Observability**: Track token usage, costs, and latencies with Langfuse
-- 🎯 **Clean Architecture**: Decorator-based approach for minimal code intrusion
-- 🐳 **Docker Ready**: Includes docker-compose setup for local development
-- 🔗 **Standards Based**: Uses W3C Trace Context format and MCP protocol conventions
+- **Distributed Tracing**: Seamless trace context propagation between MCP client and server
+- **Transport Agnostic**: Works with stdio, HTTP, and SSE transports via `_meta` field
+- **LLM Observability**: Track token usage, costs, and latencies with Langfuse
+- **Clean Architecture**: Decorator-based approach for minimal code intrusion
+- **Docker Ready**: Includes docker-compose setup for local development
+- **Standards Based**: Uses W3C Trace Context format and MCP protocol conventions
 
 ## Quick Start
 
